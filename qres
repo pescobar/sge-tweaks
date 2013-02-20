@@ -56,10 +56,12 @@ class bcolors:
 mK = 1024
 mM = 1024*1024
 mG = 1024*1024*1024
+mT = 1024*1024*1024*1024
 
 mk = 1000
 mm = 1000*1000
 mg = 1000*1000*1000
+mt = 1000*1000*1000*1000
 
 DAY = 3600 * 24
 HOUR = 3600
@@ -210,13 +212,16 @@ def mem2bytes(mem):
     return bytes
 
 def bytes2mem(bytes):
-    if bytes > mG:
+    if bytes > mt:
+        v = "%0.1f" %(float(bytes)/mt)
+        v = v.rstrip("0").rstrip(".") +"T"
+    elif bytes > mg:
         v = "%0.1f" %(float(bytes)/mg)
         v = v.rstrip("0").rstrip(".") +"G"
-    elif bytes > mM:
+    elif bytes > mm:
         v = "%0.1f" %(float(bytes)/mm)
         v = v.rstrip("0").rstrip(".") +"M"
-    elif bytes > mK:
+    elif bytes > mk:
         v = "%0.1f" %(float(bytes)/mk)
         v = v.rstrip("0").rstrip(".") +"K"
     else:
@@ -244,7 +249,7 @@ def get_options():
         for user in commands.getoutput('qconf -suserl').split("\n"):
             userList.add(user)
         if options.user not in userList:
-            print 'user ' + options.user + ' not found or has no jobs running'
+            print 'user ' + options.user + ' not found'
             sys.exit()
 
     # check if queue exists
@@ -311,20 +316,19 @@ host2avail_mem = {}
 host2avail_slots = {}
 for h in hosts:
     hinfo = commands.getoutput("qconf -se %s" %h)
-    if re.search(H_VMEMMATCH_m, hinfo):
-        mem_match = re.search(H_VMEMMATCH_m, hinfo)
-    else:
-        print 'not found h_vmem consumable resource in ' + h
-        sys.exit()
-    if re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE):
-        slots_match = re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE)
-    else:
-        print 'not found slot consumable resource in exec nodes'
-        sys.exit()
+    mem_match = re.search(H_VMEMMATCH_m, hinfo)
+    slots_match = re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE)
+   
     if mem_match:
         host2avail_mem[h] = mem2bytes(mem_match.groups()[0])
-    if mem_match:
+    else:
+        print 'h_vmem should be defined as consumable resource in ' + h
+        sys.exit()
+    if slots_match:
         host2avail_slots[h] = int(slots_match.groups()[0])
+    else:
+        print 'slot should be defined as consumable resource in ' + h
+        sys.exit()
 
 
 ## Load info about running jobs
@@ -373,7 +377,7 @@ for x in running_jobs[2:]:
     ho = queue.split("@")[1].split(".")[0]
     host2usedmem[ho] += job_task2info.get((jid, task), {}).get("vmem", 0)
     host2slots[ho]+= slots
-    jmem = job2vmem[jid]
+
     if PER_SLOT_MEM:
         try:
             host2vmem[ho] += (job2vmem[jid] * slots)
@@ -384,7 +388,6 @@ for x in running_jobs[2:]:
             host2vmem[ho] += job2vmem[jid]
         except KeyError:
             print 'h_vmem reservation not found in job with uid %s' % sys.exc_value
-
 
 ## show collected info
         
@@ -422,10 +425,10 @@ for x in hosts:
     else:
         USED_MEM_COL = "lred"
 
-    MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %((mem_used * 100)  / mem_reserved )).rjust(2)))
-
+    mem_eff = (mem_used * 100)  / mem_reserved if mem_reserved else 0.0
+    MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %mem_eff).rjust(2)))
     HOST_INFO = "%s CPU, %s" %(color("brown", str(host2avail_slots[x])), color("lblue", bytes2mem(mem_avail)))
-    
+   
     fields = [x.ljust(8),
               HOST_INFO,
               "%s / %s" %(color("cyan", str(host2slots.get(x, 0))), host2avail_slots[x]),
@@ -446,7 +449,9 @@ elif total_mem_used > 0.33 * total_mem_reserved:
     USED_MEM_COL = "yellow"
 else:
     USED_MEM_COL = "lred"
-MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %((total_mem_used * 100)  / total_mem_reserved )).rjust(2)))
+
+mem_eff = (total_mem_used * 100)  / total_mem_reserved if total_mem_reserved else 0.0
+MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %mem_eff).rjust(2)))
 entries.append([""]*6)
 fields = ["TOTALS".ljust(8),
           HOST_INFO,
@@ -474,6 +479,7 @@ print description
 header = "hostname", "host info", "CPU", "Mem: used/reserved", "Mem usage", "CPU usage" 
 #header = bcolors.HEADER + "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" + bcolors.ENDC
 
+
 print_as_table(entries, header=header)
 
 user2prio = defaultdict(list)
@@ -495,7 +501,7 @@ for jid, info in job2info.iteritems():
     
 print
 for user, priorities in user2prio.iteritems():
-    print "User", color("green",user.ljust(12)), "has", color("yellow", " %d" %len(priorities)), "project(s) with priorities: ", color("yellow", ', '.join(set(priorities)))
+    print "User", color("green",user.ljust(12)), "has", color("yellow", " %d" %len(priorities)), "job(s) with priorities: ", color("yellow", ', '.join(set(priorities)))
 print
 print color("white", "* project priority is expressed as a fold factor")
 print color("white", "   i.e. 10x = 10 times more priority than the standard level")
