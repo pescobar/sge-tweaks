@@ -552,7 +552,10 @@ if __name__ == "__main__":
     # update per user counter and priorities
     for jid in sorted_jobs:
         info = job2info[jid]
-        prio = info["prio"] - DEFAULT_JOB_PRIO
+        if 'prio' in info.keys():
+            prio = info["prio"] - DEFAULT_JOB_PRIO
+        else:
+            prio = 0
         user = info["user"]
         if prio > 0:
             prio_label = color("lred", "%sx" %prio)
